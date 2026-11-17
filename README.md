@@ -35,7 +35,7 @@ qsub jobs/smoke.qsub                 # ~5 min check: pytest + short runs of all 
 qsub -v SEEDS="0 1",SCHEDULE=dense jobs/cifar_fresh.qsub      # Run 1: CIFAR-10, seeds 0 and 1 (later: SEEDS="2 3",SCHEDULE=sparse, then "4")
 qsub jobs/cmnist_phase1.qsub                                  # Colored-MNIST Phase 1, seeds 0 and 1 (later: -v SEEDS="2 3",SCHEDULE=sparse, then "4")
 qsub -hold_jid cmnist_p1 jobs/cmnist_phase2.qsub              # Phase 2, seed 0: array of 3 tasks (N = 0 1 | 2 4 | 8 16), waits for Phase 1
-qsub -v SEED=1 jobs/cmnist_phase2.qsub                        # Phase 2, seed 1 (later seeds: -v SEED=k,SCHEDULE=sparse)
+qsub -hold_jid cmnist_p1 -v SEED=1 jobs/cmnist_phase2.qsub    # Phase 2, seed 1 (later seeds: -v SEED=k,SCHEDULE=sparse)
 
 bash jobs/interactive.sh             # interactive 2-GPU shell for debugging
 ```
