@@ -18,6 +18,9 @@ source env/bin/activate
 set -euo pipefail
 umask 022
 nvidia-smi -L
+# Use the GPUs the scheduler assigned (CUDA_VISIBLE_DEVICES, e.g. "2,3"); default 0,1.
+IFS=, read -r -a GPUS <<< "${CUDA_VISIBLE_DEVICES:-0,1}"
+echo "assigned GPUs: ${GPUS[*]}"
 
 SEED=${SEED:-0}
 PAIRS=("0 1" "2 4" "8 16")
@@ -25,7 +28,7 @@ read -r -a NS <<< "${PAIRS[$((SGE_TASK_ID - 1))]}"
 pids=()
 i=0
 for n in "${NS[@]}"; do
-  CUDA_VISIBLE_DEVICES=$i python -m plasticity.train --config configs/cmnist_phase2.json \
+  CUDA_VISIBLE_DEVICES=${GPUS[$i]} python -m plasticity.train --config configs/cmnist_phase2.json \
       --seed "$SEED" --branch-n "$n" --num-workers 3 &
   pids+=($!)
   i=$((i + 1))

@@ -17,20 +17,25 @@ source env/bin/activate
 set -euo pipefail
 umask 022
 nvidia-smi -L
+# Use the GPUs the scheduler assigned (CUDA_VISIBLE_DEVICES, e.g. "2,3"); default 0,1.
+IFS=, read -r -a GPUS <<< "${CUDA_VISIBLE_DEVICES:-0,1}"
+echo "assigned GPUs: ${GPUS[*]}"
 
 ROOT=/scratch/$USER/smoke
-rm -rf "$ROOT"; mkdir -p "$ROOT"
+rm -rf "$ROOT"; mkdir -p "$ROOT/data"
+# Reuse datasets already downloaded into the project (the CIFAR-10 server is slow, ~100 KB/s).
+cp -a data/cifar-10-batches-py data/MNIST "$ROOT/data/" 2>/dev/null || echo "no cached datasets; will download"
 
 python -m pytest -q
 
 # GPU 0: CIFAR-10 fresh run, 200 steps.
-CUDA_VISIBLE_DEVICES=0 python -m plasticity.train --config configs/cifar_fresh.json \
+CUDA_VISIBLE_DEVICES=${GPUS[0]} python -m plasticity.train --config configs/cifar_fresh.json \
     --root "$ROOT" --seed 0 --total-steps 200 --eval-size 1000 --num-workers 3 &
 pid0=$!
 
 # GPU 1: Colored-MNIST Phase 1 (1 epoch), then Phase 2 branching at N = 0 and N = 1.
 (
-  export CUDA_VISIBLE_DEVICES=1
+  export CUDA_VISIBLE_DEVICES=${GPUS[1]}
   python -m plasticity.train --config configs/cmnist_phase1.json --root "$ROOT" --seed 0 \
       --phase1-epochs 1 --durations 0 1 --eval-size 1000 --num-workers 3
   for n in 0 1; do

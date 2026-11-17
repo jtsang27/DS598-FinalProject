@@ -20,3 +20,12 @@ print("python", sys.version.split()[0])
 print("torch", torch.__version__, "| torch.version.cuda", torch.version.cuda)
 PY
 rm -rf env/tmp
+
+# Prefetch datasets into data/ (the CIFAR-10 host is slow, ~100 KB/s, so do it once here, not inside jobs).
+python - <<'PY'
+from torchvision.datasets import CIFAR10, MNIST
+for train in (True, False):
+    CIFAR10("data", train=train, download=True)
+    MNIST("data", train=train, download=True)
+print("datasets ready in data/")
+PY
