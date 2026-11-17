@@ -16,6 +16,7 @@ In Colab: **Runtime → Change runtime type → GPU**, then run all cells. Check
 
 The main experiments run on BU's SCC in **`/projectnb/ds598ns/projects/Team2project/`**, which is a clone of this repo. Everyone in the class can read it there; checkpoints, datasets and the Python environment live only on the SCC and are not committed (see `.gitignore`).
 
+- **Project in short:** [doc/proposal-summary.md](doc/proposal-summary.md) — the proposal as short bullet points, plus current status.
 - **Start here:** [doc/experiment-plan.md](doc/experiment-plan.md) — plain-English plan: what we run, why, where results go, how to load a saved model.
 - **Details for builders:** [doc/technical-design.md](doc/technical-design.md).
 
