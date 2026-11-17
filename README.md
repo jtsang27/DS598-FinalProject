@@ -26,10 +26,10 @@ All commands run from `/projectnb/ds598ns/projects/Team2project` on a login node
 ```bash
 cd /projectnb/ds598ns/projects/Team2project
 git pull
-bash jobs/setup_env.sh               # once: venv in env/, torch + torchvision (CUDA 12.4), the plasticity package
+bash jobs/setup_env.sh               # once: venv in env/, torch + torchvision (CUDA 12.4), the plasticity package, CIFAR-10/MNIST into data/ (CIFAR host is slow, ~25 min)
 mkdir -p logs/sge
 
-qsub jobs/smoke.qsub                 # ~10 min check: pytest + short runs of all three experiments in /scratch/$USER/smoke
+qsub jobs/smoke.qsub                 # ~5 min check: pytest + short runs of all three experiments in /scratch/$USER/smoke
 
 # Real runs
 qsub -v SEEDS="0 1",SCHEDULE=dense jobs/cifar_fresh.qsub      # Run 1: CIFAR-10, seeds 0 and 1 (later: SEEDS="2 3",SCHEDULE=sparse, then "4")
