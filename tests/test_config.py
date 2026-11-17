@@ -45,3 +45,16 @@ def test_run_dirs_share_cmnist_folder():
 def test_shipped_configs_load(name):
     cfg = load_config(str(Path(__file__).parents[1] / "configs" / f"{name}.json"), {})
     assert cfg.experiment == name
+
+
+def test_run_id_phase2_requires_branch_n():
+    with pytest.raises(ValueError, match="branch_n"):
+        run_id(RunConfig("cmnist_phase2"))
+    assert run_id(RunConfig("cmnist_phase1")).endswith("_color1.00")
+
+
+def test_run_id_independent_of_numeric_type():
+    assert run_id(RunConfig("cifar_fresh", alpha=1, weight_decay=0, lr=1)) == \
+        run_id(RunConfig("cifar_fresh", alpha=1.0, weight_decay=0.0, lr=1.0))
+    assert RunConfig("cifar_fresh", alpha=1).alpha == 1.0
+    assert isinstance(RunConfig("cifar_fresh", batch_size=128.0).batch_size, int)

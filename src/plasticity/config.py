@@ -29,6 +29,15 @@ class RunConfig:
     train_subset: int | None = None  # for tests
     root: str = "."
 
+    def __post_init__(self):
+        # Canonical numeric types so the same setting always yields the same run id.
+        for name in ("alpha", "lr", "momentum", "weight_decay", "color_corr"):
+            setattr(self, name, float(getattr(self, name)))
+        for name in ("seed", "batch_size"):
+            setattr(self, name, int(getattr(self, name)))
+        if self.branch_n is not None:
+            self.branch_n = int(self.branch_n)
+
 
 def load_config(path: str, overrides: dict) -> RunConfig:
     """JSON file values, then non-None overrides. Unknown keys raise ValueError."""
@@ -43,6 +52,8 @@ def load_config(path: str, overrides: dict) -> RunConfig:
 
 
 def run_id(cfg: RunConfig) -> str:
+    if cfg.experiment == "cmnist_phase2" and cfg.branch_n is None:
+        raise ValueError("cmnist_phase2 requires branch_n (pass --branch-n)")
     rid = (f"resnet18_a{cfg.alpha}_lr{cfg.lr}_wd{cfg.weight_decay}"
            f"_bs{cfg.batch_size}_seed{cfg.seed}")
     if cfg.experiment.startswith("cmnist"):
