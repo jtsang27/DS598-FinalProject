@@ -105,6 +105,7 @@ Colored-MNIST test sets, evaluated in both phases:
 
 ```
 /projectnb/ds598ns/students/maxineyu/ds598-plasticity/
+  doc/           experiment-plan.md (plain English) + technical-design.md (this file)
   code/          clone of the team repo (git pull to update)
   env/           Python virtual environment
   data/          downloads (CIFAR-10, MNIST) and generated test sets, saved once

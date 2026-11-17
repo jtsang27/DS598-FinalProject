@@ -111,7 +111,7 @@ Everything lives under `/projectnb/ds598ns/students/maxineyu/ds598-plasticity/`:
 
 ```
 ds598-plasticity/
-  docs/          this page and other explanations
+  doc/           this page and the technical design
   code/          a copy of the team GitHub repo (the scripts)
   env/           the Python setup
   data/          downloaded datasets and the generated fake test images
