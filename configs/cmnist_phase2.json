@@ -1,0 +1,4 @@
+{
+  "experiment": "cmnist_phase2",
+  "_comment": "branch_n is supplied on the command line (--branch-n)"
+}

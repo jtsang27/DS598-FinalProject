@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plasticity"
+version = "0.1.0"
+description = "ResNet18 plasticity experiments (CIFAR-10 sudden drop, Colored-MNIST two-phase) for BU SCC"
+requires-python = ">=3.10"
+dependencies = ["torch", "torchvision", "numpy", "pandas", "matplotlib"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
