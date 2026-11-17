@@ -24,7 +24,8 @@
 - Phase-2 check and save schedules are computed on `phase_step` (steps since the switch); file names and `global_step` use the continuing global count.
 - `metrics.csv` columns, in this order: `run_id, experiment, phase, global_step, phase_step, epoch, test_set, loss, acc, acc_color_label, lr, train_loss_avg, weight_norm, dist_from_init, wall_time_s`.
 - Checkpoint files named `step_{global_step:09d}.pt`; contents per design §5.7.
-- SGE jobs: `-P ds598ns`, `-l gpus=1`, `-l gpu_c=7.0`, job output to `logs/sge/`.
+- SGE resources (from the user): `-l gpus=2 -l gpu_c=7.0 -l h_rt=02:00:00 -l mem_free=32G -pe smp 8`, plus `-P ds598ns`, job output to `logs/sge/`. The training code uses one GPU per run, so a 2-GPU job runs two runs side by side (`CUDA_VISIBLE_DEVICES=0` and `=1`); runs longer than 2 h continue by resubmitting the same job (auto-resume).
+- Run-level settings that metrics rows don't carry (Phase-2 branch N, the setting prefix) are parsed from `run_id` (suffix `_N{n}ep`; prefix = `run_id` without it).
 - Teammates have read-only access: every written file must be group-readable (`umask 022`; the folder is setgid group `ds598ns`).
 
 ## Review Focus
@@ -57,7 +58,8 @@ jobs/setup_env.sh
 jobs/smoke.qsub
 jobs/cifar_fresh.qsub
 jobs/cmnist_phase1.qsub
-jobs/cmnist_phase2.qsub        array job, task i → N = [0,1,2,4,8,16][i-1]
+jobs/cmnist_phase2.qsub        array job, 3 tasks × 2 branches (one per GPU)
+jobs/interactive.sh            the qrsh line for a hand-run GPU session
 tests/conftest.py              tiny fake datasets so tests never download
 tests/test_config.py
 tests/test_data.py
@@ -440,22 +442,24 @@ def test_cli_writes_all_figures(tmp_path): ...
 ### Task 8: SCC environment, job files, smoke job, launch Run 1
 
 **Files:**
-- Create: `jobs/setup_env.sh`, `jobs/smoke.qsub`, `jobs/cifar_fresh.qsub`, `jobs/cmnist_phase1.qsub`, `jobs/cmnist_phase2.qsub`
+- Create: `jobs/setup_env.sh`, `jobs/interactive.sh`, `jobs/smoke.qsub`, `jobs/cifar_fresh.qsub`, `jobs/cmnist_phase1.qsub`, `jobs/cmnist_phase2.qsub`
 - Modify: `README.md` (a "Run on SCC" section with the commands below)
 
 **Interfaces:**
 - Consumes: the CLIs from Tasks 6 and 7.
 - `setup_env.sh`: `module load python3/3.12.4`; create `env/` venv if missing; `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124`; `pip install -e ".[test]"`; print `torch.__version__`.
-- Every `.qsub` starts with: `#$ -P ds598ns`, `#$ -l gpus=1`, `#$ -l gpu_c=7.0`, `#$ -l h_rt=12:00:00`, `#$ -j y`, `#$ -o logs/sge/`, `#$ -N <name>`; then `cd /projectnb/ds598ns/projects/Team2project`, `module load python3/3.12.4`, `source env/bin/activate`, `umask 022`, `nvidia-smi -L`, run the CLI, then (for training jobs) the plot CLI.
-- `cifar_fresh.qsub` takes `SEED` and `SCHEDULE` from `qsub -v` (defaults 0, dense).
-- `cmnist_phase2.qsub` is an array job `#$ -t 1-6`; task index → N via `N=(0 1 2 4 8 16)`; submitted with `-hold_jid cmnist_p1` so it waits for Phase 1.
-- `smoke.qsub`: `h_rt=00:30:00`, runs `pytest -q`, then a 200-step `cifar_fresh` run and a 1-epoch Phase 1 + Phase 2 (N = 0, 1) with `--root /scratch/$USER/smoke` so the shared folders stay clean.
+- Every `.qsub` starts with: `#$ -P ds598ns`, `#$ -l gpus=2`, `#$ -l gpu_c=7.0`, `#$ -l h_rt=02:00:00`, `#$ -l mem_free=32G`, `#$ -pe smp 8`, `#$ -j y`, `#$ -o logs/sge/`, `#$ -N <name>`; then `cd /projectnb/ds598ns/projects/Team2project`, `module load python3/3.12.4`, `source env/bin/activate`, `umask 022`, `nvidia-smi -L`, run the CLI(s), then (for training jobs) the plot CLI. Each run in a job uses `--num-workers 3`.
+- `cifar_fresh.qsub` runs two seeds side by side, one per GPU: `SEEDS` from `qsub -v` (default `"0 1"`), `SCHEDULE` (default dense). Each line: `CUDA_VISIBLE_DEVICES=i python -m plasticity.train ... --seed s &`, then `wait`. Resubmitting the same command continues both runs where they stopped.
+- `cmnist_phase1.qsub` runs Phase 1 for two seeds the same way (`SEEDS`, default `"0 1"`).
+- `cmnist_phase2.qsub` is an array job `#$ -t 1-3`; task i runs two branches side by side, N pairs `(0 1) (2 4) (8 16)`; submitted with `-hold_jid cmnist_p1` so it waits for Phase 1. `SEED` from `qsub -v` (default 0).
+- `jobs/interactive.sh`: prints and runs the user's interactive request, `qrsh -P ds598ns -l gpus=2 -l gpu_c=7.0 -l h_rt=02:00:00 -l mem_free=32G -pe smp 8`, for debugging on a GPU node by hand.
+- `smoke.qsub`: same resources but `h_rt=00:30:00`; runs `pytest -q`, then a 200-step `cifar_fresh` run and a 1-epoch Phase 1 + Phase 2 (N = 0, 1) with `--root /scratch/$USER/smoke` so the shared folders stay clean.
 
 - [ ] **Step 1:** On SCC, `git pull` in `Team2project` and run `bash jobs/setup_env.sh` on the login node. Expected: prints a 2.x torch version.
 - [ ] **Step 2:** `mkdir -p logs/sge && qsub jobs/smoke.qsub`. Expected after it ends: `logs/sge/smoke.o<id>` shows `passed`, a GPU name, and no traceback.
-- [ ] **Step 3:** `qsub -v SEED=0,SCHEDULE=dense jobs/cifar_fresh.qsub`. Expected: `qstat -u maxineyu` shows it running; `logs/cifar_fresh/<run_id>/metrics.csv` grows; `checkpoints/manifest.csv` gains rows.
+- [ ] **Step 3:** `qsub -v SEEDS="0 1",SCHEDULE=dense jobs/cifar_fresh.qsub`. Expected: `qstat -u maxineyu` shows it running; `logs/cifar_fresh/<run_id>/metrics.csv` grows; `checkpoints/manifest.csv` gains rows.
 - [ ] **Step 4:** After Run 1 finishes, `python -m plasticity.plot --root . --experiment cifar_fresh`; inspect `figures/cifar_fresh/curves.png` for the expected pattern (Gaussian-clone accuracy above chance early, then falling behind real). If absent, stop and investigate before Run 2.
-- [ ] **Step 5:** `qsub jobs/cmnist_phase1.qsub` then `qsub -hold_jid cmnist_p1 jobs/cmnist_phase2.qsub`. Expected: six Phase-2 tasks start after Phase 1 and each writes its own `logs/cmnist/<run_id>_N{n}ep/`.
+- [ ] **Step 5:** `qsub jobs/cmnist_phase1.qsub` then `qsub -hold_jid cmnist_p1 jobs/cmnist_phase2.qsub`. Expected: three Phase-2 tasks (two branches each) start after Phase 1 and each writes its own `logs/cmnist/<run_id>_N{n}ep/`.
 - [ ] **Step 6: Commit** job files and README; push to `main`; `git pull` on SCC.
 
-Seeds 1–4 (`SCHEDULE=sparse`) follow once seed 0's curves look right; they reuse the same job files with `-v SEED=k,SCHEDULE=sparse`.
+Seeds 1–4 (`SCHEDULE=sparse`) follow once seed 0's curves look right; they reuse the same job files with `-v SEEDS="2 3",SCHEDULE=sparse` (then `"4"`).
