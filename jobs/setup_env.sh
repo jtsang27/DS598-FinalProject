@@ -6,6 +6,10 @@ cd /projectnb/ds598ns/projects/Team2project
 module load python3/3.12.4
 [ -d env ] || python3 -m venv env
 source env/bin/activate
+# Home (10 GB quota) and /tmp (2 GB) are too small for the CUDA wheels: build and cache in the project area.
+mkdir -p env/tmp
+export TMPDIR="$PWD/env/tmp"
+export PIP_NO_CACHE_DIR=1
 python -m pip install --upgrade pip
 # SCC's own pytorch modules are too old, so install from pip (CUDA 12.4 wheels).
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
@@ -15,3 +19,4 @@ import sys, torch
 print("python", sys.version.split()[0])
 print("torch", torch.__version__, "| torch.version.cuda", torch.version.cuda)
 PY
+rm -rf env/tmp
