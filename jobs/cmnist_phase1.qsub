@@ -8,46 +8,35 @@
 #$ -j y
 #$ -o logs/sge/
 #$ -N cmnist_p1
-# Colored-MNIST Phase 1, one seed per GPU. Submit: qsub jobs/cmnist_phase1.qsub
-# (resubmit to resume; SEEDS via qsub -v SEEDS="0 1")
+# Colored-MNIST Phase 1, one seed per GPU (two seeds per job).
+# Submit: qsub jobs/cmnist_phase1.qsub                         (seeds 0 1, dense saves)
+#         qsub -v SEEDS="2 3",SCHEDULE=sparse jobs/cmnist_phase1.qsub   (later seeds)
+# Resubmit the same command to resume.
 
 cd /projectnb/ds598ns/projects/Team2project
 module load python3/3.12.4
 source env/bin/activate
 set -euo pipefail
 umask 022
+export OMP_NUM_THREADS=4   # two runs share the 8 requested cores
 nvidia-smi -L
 # Use the GPUs the scheduler assigned (CUDA_VISIBLE_DEVICES, e.g. "2,3"); default 0,1.
 IFS=, read -r -a GPUS <<< "${CUDA_VISIBLE_DEVICES:-0,1}"
 echo "assigned GPUs: ${GPUS[*]}"
 
 SEEDS=${SEEDS:-"0 1"}
+SCHEDULE=${SCHEDULE:-dense}
 read -r -a SEED_ARR <<< "$SEEDS"
 if [ "${#SEED_ARR[@]}" -gt "${#GPUS[@]}" ]; then
   echo "need ${#SEED_ARR[@]} GPUs but only ${#GPUS[@]} assigned (${GPUS[*]}); reduce the list" >&2
   exit 2
 fi
-# Wait for all background runs; if one fails, stop its siblings (they resume from checkpoints on resubmit).
-wait_all() {
-  local status=0 p
-  while [ "${#pids[@]}" -gt 0 ]; do
-    wait -n || status=$?
-    if [ "$status" -ne 0 ]; then
-      echo "a run failed (exit $status); stopping the other runs"
-      for p in "${pids[@]}"; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
-      wait || true
-      exit "$status"
-    fi
-    local alive=()
-    for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null && alive+=("$p"); done
-    pids=("${alive[@]}")
-  done
-}
+source jobs/wait_all.sh   # wait_all: collect every run's status, stop siblings on failure
 pids=()
 i=0
 for s in "${SEED_ARR[@]}"; do
   CUDA_VISIBLE_DEVICES=${GPUS[$i]} python -m plasticity.train --config configs/cmnist_phase1.json \
-      --seed "$s" --num-workers 3 &
+      --seed "$s" --save-schedule "$SCHEDULE" --num-workers 3 &
   pids+=($!)
   i=$((i + 1))
 done

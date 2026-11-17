@@ -35,10 +35,28 @@ its first file is at step `N * steps_per_epoch + 1`.
 
 ## Loading one
 
+First make the `plasticity` package importable, either by activating the project's
+environment (it has the package installed in editable mode):
+
+```bash
+source /projectnb/ds598ns/projects/Team2project/env/bin/activate
+```
+
+or, from your own Python environment (which needs `torch` and `torchvision`):
+
+```python
+import sys
+sys.path.insert(0, "/projectnb/ds598ns/projects/Team2project/src")
+```
+
+Then:
+
 ```python
 from plasticity.checkpoints import load_checkpoint
 
-model, info = load_checkpoint("checkpoints/cmnist/<run_id>/step_000004690.pt", device="cpu")
+# Colored MNIST has 468 steps per epoch; step 1872 is the end of Phase-1 epoch 4
+# (a branch point, so it exists in every Phase-1 run, dense or sparse).
+model, info = load_checkpoint("checkpoints/cmnist/<run_id>/step_000001872.pt", device="cpu")
 print(info["step"], info["phase"], info["epoch"], info["config"]["lr"])
 logits = model(x)            # x: float images in [0, 1], shape (B, 3, 32, 32)
 ```
@@ -68,7 +86,7 @@ extra = load_training_state(path, model, opt, device="cpu")   # ValueError if we
 | `phase_step` | step within the phase (Phase 2 restarts at 0) |
 | `epoch` | global step / steps per epoch |
 | `code_version` | `{"commit": git hash, "dirty": uncommitted changes?}` |
-| `data_recipe` | dataset, experiment, `color_corr` used for training in this phase, the color table, test-set seed (1234), `eval_size`, `train_subset`, test-set names, steps per epoch (Phase 2 also: `branch_n`, Phase-1 run id) |
+| `data_recipe` | dataset, experiment, `color_corr` used for training in this phase, the color table, test-set seed (1234), `eval_size`, `train_subset`, test-set names, `testset_files` (each test set's cache file, e.g. `data/testsets/gaussian_cmnist_n10000_c1.00.pt`), steps per epoch (Phase 2 also: `branch_n`, Phase-1 run id) |
 | `full_state` | `True` if the file also holds the fields below |
 | `optimizer_state`, `rng_state`, `extra_state` | full-state files only: SGD momentum buffers, Python/NumPy/torch RNG, and the loop's bookkeeping (phase step, wall time, color generator, AMP scaler) |
 
@@ -79,3 +97,14 @@ is restarted with the same settings resumes from the latest one.
 
 `manifest.csv` columns: `path` (relative to the project root), `run_id`, `experiment`,
 `phase`, `step`, `phase_step`, `epoch`, `full_state`, `commit`, `saved_at`.
+
+## Things to know when using the numbers
+
+- **Gaussian-clone test images:** pixels that are always 0 in the real training data
+  (e.g. the MNIST border, or the color channels a digit's color never uses) are not 0 in
+  the Gaussian clone. The clone adds a small jitter (1e-3) to each pixel's variance before
+  sampling and then clips to [0, 1], so those pixels get small positive noise
+  (mean about 0.013).
+- **`dist_from_init` in Phase 2** (in `metrics.csv`) is measured from the Phase-1 run's
+  step-0 weights (the original random init), not from the branch point. At Phase-2 step 0
+  it is therefore the distance Phase 1 had already travelled by epoch N (0 for N = 0).

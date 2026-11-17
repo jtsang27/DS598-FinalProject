@@ -31,17 +31,21 @@ mkdir -p logs/sge
 
 qsub jobs/smoke.qsub                 # ~5 min check: pytest + short runs of all three experiments in /scratch/$USER/smoke
 
-# Real runs
+# Real runs. Run 1 first; submit Colored MNIST only after its curves look right (see below).
 qsub -v SEEDS="0 1",SCHEDULE=dense jobs/cifar_fresh.qsub      # Run 1: CIFAR-10, seeds 0 and 1 (later: SEEDS="2 3",SCHEDULE=sparse, then "4")
-qsub jobs/cmnist_phase1.qsub                                  # Colored-MNIST Phase 1, seeds 0 and 1
-qsub -hold_jid cmnist_p1 jobs/cmnist_phase2.qsub              # Phase 2: array of 3 tasks (N = 0 1 | 2 4 | 8 16), waits for Phase 1
+qsub jobs/cmnist_phase1.qsub                                  # Colored-MNIST Phase 1, seeds 0 and 1 (later: -v SEEDS="2 3",SCHEDULE=sparse, then "4")
+qsub -hold_jid cmnist_p1 jobs/cmnist_phase2.qsub              # Phase 2, seed 0: array of 3 tasks (N = 0 1 | 2 4 | 8 16), waits for Phase 1
+qsub -v SEED=1 jobs/cmnist_phase2.qsub                        # Phase 2, seed 1 (later seeds: -v SEED=k,SCHEDULE=sparse)
 
 bash jobs/interactive.sh             # interactive 2-GPU shell for debugging
 ```
 
+- **Run 1 before Run 2:** after the first `cifar_fresh` job, open `figures/cifar_fresh/curves.png` and check the expected pattern (Gaussian-clone accuracy rising above chance early, then falling behind real) before submitting any Colored-MNIST job; if it is missing, stop and investigate.
+- **Seeds per job:** Phase 1 (like Run 1) runs two seeds per job, one per GPU (`SEEDS="0 1"`). Phase 2 runs one seed per submission: its three array tasks cover the six branches of that seed, so submit again with `-v SEED=1` for the second seed.
+- **Never resubmit a job that is still queued or running.** Check `qstat -u $USER` first: two processes on one run id would write duplicate metrics rows and checkpoints and confuse resume.
 - **Status:** `qstat -u $USER`. Delete a job with `qdel <job-id>`.
 - **Output:** job logs in `logs/sge/<name>.o<job-id>`; per-run `metrics.csv` in `logs/<experiment>/<run_id>/`; figures in `figures/<experiment>/`; checkpoints in `checkpoints/<experiment>/<run_id>/` (listed in `checkpoints/manifest.csv`).
-- **Resuming:** if a job hits its time limit or fails, submit the same `qsub` command again; each run continues from its latest checkpoint and finished runs exit immediately.
+- **Resuming:** if a job hits its time limit or fails (and is no longer in `qstat`), submit the same `qsub` command again (same `SEEDS`/`SEED` and `SCHEDULE`); each run continues from its latest checkpoint and finished runs exit immediately.
 - **Plots by hand:** `python -m plasticity.plot --root . --experiment cifar_fresh` (or `cmnist`).
 
 ## Folder layout

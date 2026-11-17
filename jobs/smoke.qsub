@@ -16,6 +16,7 @@ module load python3/3.12.4
 source env/bin/activate
 set -euo pipefail
 umask 022
+export OMP_NUM_THREADS=4   # two runs share the 8 requested cores
 nvidia-smi -L
 # Use the GPUs the scheduler assigned (CUDA_VISIBLE_DEVICES, e.g. "2,3"); default 0,1.
 IFS=, read -r -a GPUS <<< "${CUDA_VISIBLE_DEVICES:-0,1}"
@@ -47,22 +48,7 @@ pid0=$!
 ) &
 pid1=$!
 
-# Wait for all background runs; if one fails, stop its siblings (they resume from checkpoints on resubmit).
-wait_all() {
-  local status=0 p
-  while [ "${#pids[@]}" -gt 0 ]; do
-    wait -n || status=$?
-    if [ "$status" -ne 0 ]; then
-      echo "a run failed (exit $status); stopping the other runs"
-      for p in "${pids[@]}"; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
-      wait || true
-      exit "$status"
-    fi
-    local alive=()
-    for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null && alive+=("$p"); done
-    pids=("${alive[@]}")
-  done
-}
+source jobs/wait_all.sh   # wait_all: collect every run's status, stop siblings on failure
 pids=("$pid0" "$pid1")
 wait_all
 
