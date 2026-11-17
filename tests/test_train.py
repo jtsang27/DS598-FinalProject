@@ -211,3 +211,31 @@ def test_resume_does_not_resave_replayed_checkpoints(tmp_path, fake_raw):
     assert (ckpt / "step_000000004.pt").exists()
     df = pd.read_csv(met_path)
     assert not df.duplicated(["global_step", "test_set"]).any() and df.global_step.max() == 4
+
+
+def test_phase2_batch_order_independent_of_branch_n():
+    spe, n_train, bs = 5, 80, 16
+    plans = [train_mod._Plan("phase2", spe, 3 * spe, n * spe, 0.0) for n in (1, 4)]
+    orders = [[train_mod.batch_indices(7, p, ps, n_train, bs).tolist()
+               for ps in range(p.total)] for p in plans]
+    assert orders[0] == orders[1]
+    assert orders[0][0] != orders[0][spe]                    # reshuffled each phase-2 epoch
+
+
+def test_phase1_and_cifar_batch_order_keyed_on_global_epoch():
+    spe, n_train, bs = 5, 80, 16
+    plan = train_mod._Plan("phase1", spe, 3 * spe, 0, 1.0)
+    for ps in range(plan.total):
+        e, w = divmod(ps, spe)
+        g = torch.Generator().manual_seed(7 * 1_000_003 + e)
+        expected = torch.randperm(n_train, generator=g)[w * bs:(w + 1) * bs]
+        assert torch.equal(train_mod.batch_indices(7, plan, ps, n_train, bs), expected)
+
+
+def test_data_recipe_names_test_set_files(cifar_run):
+    cfg, _ = cifar_run
+    _, info = load_checkpoint(run_dirs(cfg)["ckpt"] / "step_000000020.pt")
+    files = info["data_recipe"]["testset_files"]
+    assert set(files) == {"real", "gaussian", "independent"}
+    assert files["gaussian"] == "data/testsets/gaussian_cifar_n10_t200.pt"
+    assert all((Path(cfg.root) / f).exists() for f in files.values())

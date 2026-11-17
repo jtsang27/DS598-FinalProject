@@ -116,3 +116,37 @@ def test_cache_key_includes_train_subset(tmp_path, fake_raw):
         build_test_sets(cfg, fake_raw("cifar"))
     files = list((tmp_path / "data" / "testsets").glob("gaussian_*.pt"))
     assert len(files) == 2
+
+
+def test_test_set_cache_written_atomically(tmp_path, fake_raw, monkeypatch):
+    import os
+
+    import plasticity.checkpoints as ck
+    replaced = []
+    real_replace = os.replace
+    monkeypatch.setattr(ck.os, "replace", lambda a, b: (replaced.append((a, b)), real_replace(a, b)))
+    cfg = RunConfig("cifar_fresh", root=str(tmp_path), eval_size=50)
+    build_test_sets(cfg, fake_raw("cifar"))
+    folder = tmp_path / "data" / "testsets"
+    files = sorted(folder.iterdir())
+    assert len(replaced) == 3 and sorted(b for _, b in replaced) == files
+    assert all(not f.name.startswith(".") for f in files)      # no temp files left behind
+    assert all(f.stat().st_mode & 0o777 == 0o666 & ~ck._current_umask() for f in files)
+
+
+def test_corrupt_test_set_cache_is_rebuilt(tmp_path, fake_raw):
+    cfg = RunConfig("cifar_fresh", root=str(tmp_path), eval_size=50)
+    good = build_test_sets(cfg, fake_raw("cifar"))
+    victim = next((tmp_path / "data" / "testsets").glob("gaussian_*.pt"))
+    victim.write_bytes(b"truncated")
+    again = build_test_sets(cfg, fake_raw("cifar"))
+    assert torch.equal(again["gaussian"].tensors[0], good["gaussian"].tensors[0])
+    assert torch.equal(torch.load(victim)[0], good["gaussian"].tensors[0])   # file repaired
+
+
+def test_test_set_paths_names_cache_files(tmp_path):
+    from plasticity.data import test_set_paths
+    paths = test_set_paths(RunConfig("cmnist_phase2", branch_n=1, root=str(tmp_path),
+                                     eval_size=100))
+    assert set(paths) == {"color_matched", "color_random", "color_conflict", "gaussian"}
+    assert paths["gaussian"].name == "gaussian_cmnist_n100_c1.00.pt"

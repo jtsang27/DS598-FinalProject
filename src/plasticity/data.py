@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.utils.data import TensorDataset
 
+from plasticity.checkpoints import _atomic_save
 from plasticity.config import RunConfig, run_dirs
 
 TESTSET_SEED = 1234
@@ -148,8 +149,8 @@ def _build_cmnist(cfg: RunConfig, raw: dict) -> dict[str, TensorDataset]:
             "gaussian": TensorDataset(xg, yg)}
 
 
-def build_test_sets(cfg: RunConfig, raw: dict) -> dict[str, TensorDataset]:
-    """Build (or load from data/testsets/) the fixed test sets for this experiment family."""
+def test_set_paths(cfg: RunConfig) -> dict[str, Path]:
+    """Cache file of each fixed test set, e.g. data/testsets/gaussian_cmnist_n10000_c1.00.pt."""
     cmnist = cfg.experiment.startswith("cmnist")
     key = f"cmnist_n{cfg.eval_size}_c{cfg.color_corr:.2f}" if cmnist else f"cifar_n{cfg.eval_size}"
     if cfg.train_subset is not None:
@@ -157,13 +158,23 @@ def build_test_sets(cfg: RunConfig, raw: dict) -> dict[str, TensorDataset]:
     names = (["color_matched", "color_random", "color_conflict", "gaussian"] if cmnist
              else ["real", "gaussian", "independent"])
     folder = run_dirs(cfg)["data"] / "testsets"
-    paths = {name: folder / f"{name}_{key}.pt" for name in names}
+    return {name: folder / f"{name}_{key}.pt" for name in names}
+
+
+def build_test_sets(cfg: RunConfig, raw: dict) -> dict[str, TensorDataset]:
+    """Build (or load from data/testsets/) the fixed test sets for this experiment family.
+
+    Files are written atomically (temp file + rename), so runs that build the same cache at
+    once never read a partial file; an unreadable cache is rebuilt."""
+    paths = test_set_paths(cfg)
     if all(p.exists() for p in paths.values()):
-        return {name: TensorDataset(*torch.load(p)) for name, p in paths.items()}
-    sets = (_build_cmnist if cmnist else _build_cifar)(cfg, raw)
-    folder.mkdir(parents=True, exist_ok=True)
+        try:
+            return {name: TensorDataset(*torch.load(p)) for name, p in paths.items()}
+        except Exception:  # noqa: BLE001 -- corrupt or foreign file: rebuild below
+            pass
+    sets = (_build_cmnist if cfg.experiment.startswith("cmnist") else _build_cifar)(cfg, raw)
     for name, ds in sets.items():
-        torch.save(list(ds.tensors), paths[name])
+        _atomic_save(list(ds.tensors), paths[name])
     return sets
 
 

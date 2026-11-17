@@ -4,7 +4,8 @@
 
 The whole uint8 training set is kept as one tensor on the device and shuffled batches are
 indexed from it directly (no DataLoader, so ``num_workers`` is unused). Batch order is a
-function of the step count alone, so a resumed run sees the same batches.
+function of the seed and step count alone, so a resumed run sees the same batches; in
+Phase 2 it depends on the Phase-2 step only, so every branch N sees the same data stream.
 """
 from __future__ import annotations
 
@@ -27,10 +28,10 @@ from .checkpoints import (append_manifest, git_version, load_checkpoint, load_tr
                           save_checkpoint)
 from .config import RunConfig, load_config, phase1_run_id, run_dirs, run_id
 from .data import (COLORS, TESTSET_SEED, build_test_sets, colorize, gpu_augment_cifar,
-                   load_raw, sample_color_idx)
+                   load_raw, sample_color_idx, test_set_paths)
 from .metrics import MetricsLogger, dist_from_init, evaluate, weight_norm
 from .models import resnet18_cifar
-from .schedule import check_steps, full_state_steps, save_steps
+from .schedule import check_steps, full_state_steps, phase2_check_steps, save_steps
 
 PHASES = {"cifar_fresh": "train", "cmnist_phase1": "phase1", "cmnist_phase2": "phase2"}
 
@@ -62,6 +63,25 @@ def _plan(cfg: RunConfig, n_train: int) -> _Plan:
     return _Plan("phase2", spe, cfg.phase2_epochs * spe, cfg.branch_n * spe, 0.0)
 
 
+def _batch_position(plan: _Plan, phase_step: int) -> tuple[int, int]:
+    """(shuffle epoch, batch within epoch). CIFAR and Phase 1 key the shuffle on the global
+    epoch; Phase 2 on the Phase-2 epoch, so all branches share one Phase-2 data stream."""
+    step = phase_step if plan.phase == "phase2" else plan.global_step(phase_step)
+    return divmod(step, plan.spe)
+
+
+def epoch_permutation(seed: int, epoch: int, n_train: int) -> torch.Tensor:
+    g = torch.Generator().manual_seed(seed * 1_000_003 + epoch)
+    return torch.randperm(n_train, generator=g)
+
+
+def batch_indices(seed: int, plan: _Plan, phase_step: int, n_train: int,
+                  batch_size: int) -> torch.Tensor:
+    """Training-set indices of the batch taken at ``phase_step`` (CPU int64 tensor)."""
+    epoch, within = _batch_position(plan, phase_step)
+    return epoch_permutation(seed, epoch, n_train)[within * batch_size:(within + 1) * batch_size]
+
+
 def _data_recipe(cfg: RunConfig, plan: _Plan, test_names: list[str]) -> dict:
     recipe = {
         "dataset": "cifar10" if cfg.experiment == "cifar_fresh" else "mnist32_colored",
@@ -73,6 +93,8 @@ def _data_recipe(cfg: RunConfig, plan: _Plan, test_names: list[str]) -> dict:
         "train_subset": cfg.train_subset,
         "test_sets": test_names,
         "testset_dir": "data/testsets",
+        "testset_files": {name: f"data/testsets/{p.name}"
+                          for name, p in test_set_paths(cfg).items() if name in test_names},
         "steps_per_epoch": plan.spe,
     }
     if cfg.experiment == "cmnist_phase2":
@@ -174,7 +196,8 @@ def train(cfg: RunConfig, raw: dict | None = None, device: str | None = None) ->
 
     test_sets = build_test_sets(cfg, raw)
     recipe = _data_recipe(cfg, plan, list(test_sets))
-    checks = set(check_steps(plan.spe, plan.total))
+    checks = set(phase2_check_steps(plan.spe, plan.total) if plan.phase == "phase2"
+                 else check_steps(plan.spe, plan.total))
     saves = set(save_steps(cfg.experiment, cfg.save_schedule, plan.spe, plan.total,
                            cfg.durations))
     fulls = set(full_state_steps(cfg.experiment, plan.spe, plan.total, cfg.durations))
@@ -243,11 +266,9 @@ def train(cfg: RunConfig, raw: dict | None = None, device: str | None = None) ->
     if start == 0:
         check(0)
     for ps in range(start, plan.total):
-        gs = plan.global_step(ps)
-        epoch_idx, within = divmod(gs, plan.spe)
-        if epoch_idx != perm_epoch:
-            g = torch.Generator().manual_seed(cfg.seed * 1_000_003 + epoch_idx)
-            perm, perm_epoch = torch.randperm(n_train, generator=g), epoch_idx
+        epoch_idx, within = _batch_position(plan, ps)
+        if epoch_idx != perm_epoch:  # same permutation as batch_indices(), built once per epoch
+            perm, perm_epoch = epoch_permutation(cfg.seed, epoch_idx, n_train), epoch_idx
         idx = perm[within * cfg.batch_size:(within + 1) * cfg.batch_size]
         idx_dev = idx.to(device)
         x = x_train[idx_dev].float() / 255

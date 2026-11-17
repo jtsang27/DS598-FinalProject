@@ -44,7 +44,7 @@ def _current_umask() -> int:
     return mask
 
 
-def _atomic_save(obj: dict, path: Path) -> None:
+def _atomic_save(obj, path: Path) -> None:
     """Write to a temp file in the same directory, then os.replace; final mode 0o666 & ~umask."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
