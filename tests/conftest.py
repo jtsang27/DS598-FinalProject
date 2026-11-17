@@ -23,7 +23,7 @@ def _make_raw(kind: str) -> dict:
     }
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def fake_raw():
     """Callable fake_raw(kind) -> deterministic raw dict; kind in {"cifar", "mnist"}."""
     return _make_raw
