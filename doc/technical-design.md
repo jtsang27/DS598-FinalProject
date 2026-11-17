@@ -84,10 +84,13 @@ Colored-MNIST test sets, evaluated in both phases:
 - **SCC is a batch system (SGE).** GPU work runs through `qsub` job files with
   `-P ds598ns` and `-l gpus=1`, never on the login node. Module names, available GPU
   types and the project's storage quota must be checked on SCC before the first job.
-- **Location:** outputs go under `/projectnb/ds598ns/students/maxineyu/`. Teammates in
-  the `ds598ns` group need read access to `checkpoints/`, `logs/` and `figures/`.
-- **Code lives in the team GitHub repo**
-  (`jtsang27/DS598-FinalProject`). SCC holds a clone of it plus the outputs.
+- **Location:** `/projectnb/ds598ns/projects/Team2project/`, owned by maxineyu, group
+  `ds598ns` (the whole class) with read access. Teammates can read everything there but
+  cannot write; they save their own results in their own folders.
+- **Code lives in the team GitHub repo** (`jtsang27/DS598-FinalProject`).
+  `Team2project/` *is* a clone of that repo, so the code and the folder structure are the
+  same on GitHub and on SCC. Large outputs (datasets, checkpoints, the Python
+  environment, job output) are excluded from git by `.gitignore`.
 - Dependencies stay minimal: PyTorch, torchvision, numpy, pandas, matplotlib. No
   `concept-erasure`, HuggingFace Trainer or Weights & Biases.
 
@@ -104,11 +107,14 @@ Colored-MNIST test sets, evaluated in both phases:
 ### 5.1 Folder layout on SCC
 
 ```
-/projectnb/ds598ns/students/maxineyu/ds598-plasticity/
+/projectnb/ds598ns/projects/Team2project/     = clone of the team GitHub repo
+  README.md
   doc/           experiment-plan.md (plain English) + technical-design.md (this file)
-  code/          clone of the team repo (git pull to update)
-  env/           Python virtual environment
+  colab/         the Colab reproduction notebook
+  src/ configs/ jobs/ tests/   the code (5.2), tracked in git
+  env/           Python virtual environment              (not in git)
   data/          downloads (CIFAR-10, MNIST) and generated test sets, saved once
+                                                         (contents not in git)
   checkpoints/   shared, read-only for teammates
     README.md    how to load a checkpoint, folder naming, what each field means
     manifest.csv one row per saved checkpoint (path, run_id, phase, step, epoch, …)

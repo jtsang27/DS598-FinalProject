@@ -1,0 +1,31 @@
+# Large or machine-specific files stay on the SCC only (Team2project/), not in git.
+
+# Python environment and caches
+env/
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Datasets and generated test sets
+data/*
+!data/README.md
+
+# Model checkpoints (shared on SCC: /projectnb/ds598ns/projects/Team2project/checkpoints)
+checkpoints/*
+!checkpoints/README.md
+
+# Batch-job output and bulky logs
+logs/sge/
+*.log
+
+# Any stray model or array files elsewhere
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npy
+*.npz
+
+# OS clutter
+.DS_Store

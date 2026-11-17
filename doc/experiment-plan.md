@@ -5,7 +5,7 @@
 This page explains, in plain language, what we are about to run on BU's SCC cluster,
 why, where the results will be saved, and how teammates can reuse them. The technical
 version (for whoever writes the code) is
-`docs/superpowers/specs/2026-11-16-resnet-scc-design.md` in the team repo.
+`doc/technical-design.md`, in the same folder as this page.
 
 ---
 
@@ -107,15 +107,21 @@ change.
 
 ## 5. Where everything is saved
 
-Everything lives under `/projectnb/ds598ns/students/maxineyu/ds598-plasticity/`:
+Everything lives in `/projectnb/ds598ns/projects/Team2project/` on the SCC. Everyone in
+the class can open and read it; only Maxine's account can change it.
+
+That folder is a copy of the team GitHub repo, so the code and the folders look the same
+in both places. The big files (datasets, saved models, the Python setup) stay on the SCC
+only and are not uploaded to GitHub.
 
 ```
-ds598-plasticity/
+Team2project/
   doc/           this page and the technical design
-  code/          a copy of the team GitHub repo (the scripts)
-  env/           the Python setup
-  data/          downloaded datasets and the generated fake test images
-  checkpoints/   saved models, shared with the team (read-only for others)
+  colab/         the Colab notebook from the first step
+  src/, configs/, jobs/, tests/   the scripts (on GitHub too)
+  env/           the Python setup                          (SCC only)
+  data/          downloaded datasets and the fake test images (SCC only)
+  checkpoints/   saved models, shared with the team        (SCC only)
   logs/          the numbers recorded during training
   figures/       the curve plots
 ```

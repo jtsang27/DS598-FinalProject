@@ -12,6 +12,26 @@ Built on [EleutherAI/features-across-time](https://github.com/EleutherAI/feature
 
 In Colab: **Runtime → Change runtime type → GPU**, then run all cells. Checkpoints go to `MyDrive/DS598-FinalProject/runs` when Drive is mounted.
 
+## ResNet18 runs on the SCC
+
+The main experiments run on BU's SCC in **`/projectnb/ds598ns/projects/Team2project/`**, which is a clone of this repo. Everyone in the class can read it there; checkpoints, datasets and the Python environment live only on the SCC and are not committed (see `.gitignore`).
+
+- **Start here:** [doc/experiment-plan.md](doc/experiment-plan.md) — plain-English plan: what we run, why, where results go, how to load a saved model.
+- **Details for builders:** [doc/technical-design.md](doc/technical-design.md).
+
+## Folder layout
+
+```
+README.md
+doc/           experiment plan (plain English) + technical design
+colab/         Colab reproduction of features-across-time
+src/ configs/ jobs/ tests/   ResNet18 training code (coming next)
+data/          datasets + generated test sets      (SCC only, not in git)
+checkpoints/   saved models, shared with the team   (SCC only, not in git)
+logs/          metrics.csv per run
+figures/       training-curve plots
+```
+
 ## Files
 
 - `colab/patch_fat.py` — small patch so the example's `train_vision.py` runs on one Colab GPU (auto device, no bf16 on T4, no wandb, skips eval sets that need missing files). Configured through `FAT_*` environment variables; see the file header.
