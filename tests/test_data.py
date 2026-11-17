@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from plasticity.config import RunConfig
 from plasticity.data import (COLORS, build_test_sets, colorize, fit_gaussian_clone,
@@ -76,3 +77,42 @@ def test_gpu_augment_keeps_shape_and_range():
     x = torch.rand(8, 3, 32, 32)
     out = gpu_augment_cifar(x)
     assert out.shape == x.shape and out.min() >= 0 and out.max() <= 1
+
+
+def test_gpu_augment_is_crop_of_padded_maybe_flipped():
+    x = torch.rand(32, 3, 32, 32) + 0.5  # nonzero so zero padding is distinguishable
+    out = gpu_augment_cifar(x)
+    padded = F.pad(x, (4, 4, 4, 4))
+    for i in range(len(x)):
+        crops = [padded[i, :, dy:dy + 32, dx:dx + 32] for dy in range(9) for dx in range(9)]
+        assert any(torch.equal(c, out[i]) or torch.equal(c.flip(2), out[i]) for c in crops)
+
+
+def test_gaussian_clone_reproduces_covariance():
+    g = torch.Generator().manual_seed(0)
+    k, n = 3, 4000
+    mix = torch.randn(k, 3 * 32 * 32, generator=g)
+    z = torch.randn(n, k, generator=g)
+    flat = z @ mix * 0.06 + 0.5  # rank-3 correlated pixels, std ~0.1 around 0.5 (clipping negligible)
+    x = flat.reshape(n, 3, 32, 32)
+    y = torch.zeros(n, dtype=torch.long)
+    xg, _ = fit_gaussian_clone(x, y, n=n, seed=1)
+    a, b = x.reshape(n, -1), xg.reshape(n, -1)
+    ca, cb = torch.cov(a.T), torch.cov(b.T)
+    # pick the most strongly correlated pixel pair (off-diagonal) in the real data
+    corr = ca / torch.sqrt(torch.diag(ca)[:, None] * torch.diag(ca)[None, :])
+    corr.fill_diagonal_(0)
+    i, j = divmod(corr.abs().argmax().item(), corr.shape[1])
+    assert corr[i, j].abs() > 0.5 and abs(ca[i, j]) > 1e-3
+    assert abs(cb[i, j] - ca[i, j]) < 0.25 * abs(ca[i, j])
+    # a diagonal-only fit would give ~0 here; clone must be nowhere near that
+    assert (cb - ca).norm() < 0.3 * ca.norm()
+    assert (torch.diag_embed(torch.diag(ca)) - ca).norm() > 0.5 * ca.norm()
+
+
+def test_cache_key_includes_train_subset(tmp_path, fake_raw):
+    for sub in (None, 100):
+        cfg = RunConfig("cifar_fresh", root=str(tmp_path), eval_size=50, train_subset=sub)
+        build_test_sets(cfg, fake_raw("cifar"))
+    files = list((tmp_path / "data" / "testsets").glob("gaussian_*.pt"))
+    assert len(files) == 2

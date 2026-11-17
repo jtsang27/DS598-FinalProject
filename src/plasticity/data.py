@@ -152,6 +152,8 @@ def build_test_sets(cfg: RunConfig, raw: dict) -> dict[str, TensorDataset]:
     """Build (or load from data/testsets/) the fixed test sets for this experiment family."""
     cmnist = cfg.experiment.startswith("cmnist")
     key = f"cmnist_n{cfg.eval_size}_c{cfg.color_corr:.2f}" if cmnist else f"cifar_n{cfg.eval_size}"
+    if cfg.train_subset is not None:
+        key += f"_t{cfg.train_subset}"
     names = (["color_matched", "color_random", "color_conflict", "gaussian"] if cmnist
              else ["real", "gaussian", "independent"])
     folder = run_dirs(cfg)["data"] / "testsets"
