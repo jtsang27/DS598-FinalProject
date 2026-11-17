@@ -180,3 +180,34 @@ def test_cli_main(tmp_path, fake_raw, monkeypatch, cifar_run):
 def test_cli_requires_config():
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_resume_does_not_resave_replayed_checkpoints(tmp_path, fake_raw):
+    """A job killed after its last full save replays some steps on resume; files written
+    before the kill (which match the logged rows) must not be overwritten or re-listed."""
+    cfg = tiny("cmnist_phase1", tmp_path, train_subset=32)  # spe 2, total 4, dense saves
+    train(cfg, raw=fake_raw("mnist"), device="cpu")          # full state at steps 2 and 4
+    ckpt, root = run_dirs(cfg)["ckpt"], Path(cfg.root)
+    # simulate a kill just before step 4: drop its file, manifest row and metrics rows
+    (ckpt / "step_000000004.pt").unlink()
+    man_path = root / "checkpoints" / "manifest.csv"
+    man = pd.read_csv(man_path)
+    man[man.step != 4].to_csv(man_path, index=False)
+    met_path = run_dirs(cfg)["logs"] / "metrics.csv"
+    met = pd.read_csv(met_path)
+    met[met.global_step < 4].to_csv(met_path, index=False)
+    _, info3 = load_checkpoint(ckpt / "step_000000003.pt")
+    assert info3["full_state"] is False                      # weights-only, in replay window
+    before = (ckpt / "step_000000003.pt").read_bytes()
+    mtime = (ckpt / "step_000000003.pt").stat().st_mtime_ns
+
+    logs = train(cfg, raw=fake_raw("mnist"), device="cpu")   # resumes from step 2
+    assert "resumed from step 2" in (logs / "train.log").read_text()
+    man = pd.read_csv(man_path)
+    assert not man.path.duplicated().any()
+    assert sorted(man.step) == [0, 1, 2, 3, 4]
+    assert (ckpt / "step_000000003.pt").read_bytes() == before
+    assert (ckpt / "step_000000003.pt").stat().st_mtime_ns == mtime
+    assert (ckpt / "step_000000004.pt").exists()
+    df = pd.read_csv(met_path)
+    assert not df.duplicated(["global_step", "test_set"]).any() and df.global_step.max() == 4

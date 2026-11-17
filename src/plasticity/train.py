@@ -217,8 +217,13 @@ def train(cfg: RunConfig, raw: dict | None = None, device: str | None = None) ->
             log(f"step {gs} (phase_step {ps}) epoch {epoch:.3f} train_loss {tl} | {accs} "
                 f"| elapsed {wt:.0f}s")
         full = ps in fulls or time.time() - last_full_save >= cfg.full_state_every_s
+        path = dirs["ckpt"] / f"step_{gs:09d}.pt"
+        replayed = last_logged is not None and gs <= last_logged
+        if replayed and path.exists():
+            # Steps retrained after a resume: the file written before the interruption
+            # matches the logged rows, so keep it (and its single manifest row).
+            return
         if ps in saves or full:
-            path = dirs["ckpt"] / f"step_{gs:09d}.pt"
             extra = {"phase_step": ps, "global_step": gs, "wall_time_s": wall(),
                      "color_gen": color_gen.get_state(),
                      "scaler": scaler.state_dict() if scaler is not None else None}

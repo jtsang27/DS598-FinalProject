@@ -73,7 +73,8 @@ extra = load_training_state(path, model, opt, device="cpu")   # ValueError if we
 | `optimizer_state`, `rng_state`, `extra_state` | full-state files only: SGD momentum buffers, Python/NumPy/torch RNG, and the loop's bookkeeping (phase step, wall time, color generator, AMP scaler) |
 
 Full-state files are written at the end of every run, at each Phase-1 duration N, and at
-the first check after every `full_state_every_s` seconds (2 hours by default). A job that
+the first check after every `full_state_every_s` seconds (30 minutes by default, so a job killed at its 2-hour limit loses at most
+about half an hour). A job that
 is restarted with the same settings resumes from the latest one.
 
 `manifest.csv` columns: `path` (relative to the project root), `run_id`, `experiment`,

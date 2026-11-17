@@ -58,3 +58,7 @@ def test_run_id_independent_of_numeric_type():
         run_id(RunConfig("cifar_fresh", alpha=1.0, weight_decay=0.0, lr=1.0))
     assert RunConfig("cifar_fresh", alpha=1).alpha == 1.0
     assert isinstance(RunConfig("cifar_fresh", batch_size=128.0).batch_size, int)
+
+
+def test_full_state_interval_fits_two_hour_jobs():
+    assert RunConfig("cifar_fresh").full_state_every_s == 1800

@@ -25,7 +25,7 @@ class RunConfig:
     save_schedule: str = "dense"  # "dense" | "sparse"
     amp: bool = True
     num_workers: int = 4
-    full_state_every_s: int = 7200
+    full_state_every_s: int = 1800  # well inside the SCC jobs' 2-hour h_rt
     train_subset: int | None = None  # for tests
     root: str = "."
 
