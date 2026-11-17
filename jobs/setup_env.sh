@@ -2,6 +2,7 @@
 # One-time (or repeatable) Python environment setup on the SCC login node.
 # Usage: bash jobs/setup_env.sh
 set -euo pipefail
+umask 022
 cd /projectnb/ds598ns/projects/Team2project
 module load python3/3.12.4
 [ -d env ] || python3 -m venv env

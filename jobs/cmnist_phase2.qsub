@@ -25,6 +25,26 @@ echo "assigned GPUs: ${GPUS[*]}"
 SEED=${SEED:-0}
 PAIRS=("0 1" "2 4" "8 16")
 read -r -a NS <<< "${PAIRS[$((SGE_TASK_ID - 1))]}"
+if [ "${#NS[@]}" -gt "${#GPUS[@]}" ]; then
+  echo "need ${#NS[@]} GPUs but only ${#GPUS[@]} assigned (${GPUS[*]}); reduce the list" >&2
+  exit 2
+fi
+# Wait for all background runs; if one fails, stop its siblings (they resume from checkpoints on resubmit).
+wait_all() {
+  local status=0 p
+  while [ "${#pids[@]}" -gt 0 ]; do
+    wait -n || status=$?
+    if [ "$status" -ne 0 ]; then
+      echo "a run failed (exit $status); stopping the other runs"
+      for p in "${pids[@]}"; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
+      wait || true
+      exit "$status"
+    fi
+    local alive=()
+    for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null && alive+=("$p"); done
+    pids=("${alive[@]}")
+  done
+}
 pids=()
 i=0
 for n in "${NS[@]}"; do
@@ -33,8 +53,6 @@ for n in "${NS[@]}"; do
   pids+=($!)
   i=$((i + 1))
 done
-status=0
-for p in "${pids[@]}"; do wait "$p" || status=$?; done
-if [ "$status" -ne 0 ]; then echo "a run failed (exit $status)"; exit "$status"; fi
+wait_all
 # Plots read every Phase-2 log; the last array task to finish has them all (earlier ones plot partial data).
 python -m plasticity.plot --root . --experiment cmnist || true
