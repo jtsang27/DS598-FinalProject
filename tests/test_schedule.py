@@ -46,3 +46,22 @@ def test_unknown_experiment_or_schedule_raises():
         save_steps("nope", "dense", 10, 100, [])
     with pytest.raises(ValueError):
         save_steps("cifar_fresh", "weird", 10, 100, [])
+
+
+def test_check_steps_dense_prefix_for_phase2():
+    base = check_steps(steps_per_epoch=100, total=500)
+    dense = check_steps(steps_per_epoch=100, total=500, dense_until=200, dense_every=16)
+    assert set(base) <= set(dense)
+    assert set(dense) - set(base) == {16 * k for k in range(1, 13)} - set(base)  # 16..192
+    assert 208 not in dense and dense == sorted(set(dense))
+    # dense prefix is capped at total
+    assert max(check_steps(10, 40, dense_until=1000, dense_every=16)) == 40
+
+
+def test_phase2_check_steps_every_16_for_two_epochs():
+    from plasticity.schedule import phase2_check_steps
+    spe, total = 468, 20 * 468
+    s = set(phase2_check_steps(spe, total))
+    assert {16 * k for k in range(1, 2 * spe // 16 + 1)} <= s
+    assert set(check_steps(spe, total)) <= s
+    assert 16 * (2 * spe // 16 + 1) not in s

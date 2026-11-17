@@ -202,8 +202,25 @@ def _draw_cmnist_overlay(df: pd.DataFrame):
 
 
 def _first_reach(steps: np.ndarray, acc: np.ndarray, target: float) -> float:
+    """First step where ``acc`` reaches ``target``, interpolated between checks.
+
+    Between the last check below the target (s0, a0) and the first at or above it (s1, a1)
+    the curve is taken as linear in log(step), so the answer is not limited to the check
+    grid; if s0 is step 0 (log undefined) it is linear in step. NaN if never reached."""
+    steps, acc = np.asarray(steps, dtype=float), np.asarray(acc, dtype=float)
     hit = np.flatnonzero(acc >= target - 1e-12)
-    return float(steps[hit[0]]) if len(hit) else float("nan")
+    if not len(hit):
+        return float("nan")
+    i = hit[0]
+    if i == 0:
+        return float(steps[0])
+    s0, s1, a0, a1 = steps[i - 1], steps[i], acc[i - 1], acc[i]
+    frac = min(max((target - a0) / (a1 - a0), 0.0), 1.0)
+    if frac >= 1.0:  # exactly on a check: no rounding from exp/log
+        return float(s1)
+    if s0 <= 0:
+        return float(s0 + frac * (s1 - s0))
+    return float(np.exp(np.log(s0) + frac * (np.log(s1) - np.log(s0))))
 
 
 def plasticity_table(df: pd.DataFrame, target_frac: float = 0.9) -> pd.DataFrame:

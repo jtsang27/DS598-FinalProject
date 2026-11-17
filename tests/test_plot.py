@@ -250,3 +250,37 @@ def test_overlay_content():
 
 CHANCE_Y = 0.1
 CMNIST_TS = ("color_matched", "color_random", "color_conflict", "gaussian")
+
+
+def test_first_reach_interpolates_in_log_step():
+    from plasticity.plot import _first_reach
+    steps = np.array([0, 16, 32, 64, 128])
+    acc = np.array([0.0, 0.2, 0.4, 0.6, 0.8])
+    # halfway (in accuracy) between checks 32 and 64 -> geometric mean of the steps
+    assert _first_reach(steps, acc, 0.5) == pytest.approx(math.sqrt(32 * 64))
+    assert _first_reach(steps, acc, 0.4) == pytest.approx(32)      # exactly on a check
+    assert _first_reach(steps, acc, 0.0) == 0.0                     # reached at the start
+    assert _first_reach(steps, acc, 0.1) == pytest.approx(8)       # from step 0: linear
+    assert math.isnan(_first_reach(steps, acc, 0.9))
+
+
+def test_plasticity_ratio_not_limited_by_check_spacing():
+    # control crosses the target between checks 64 and 128; the branch exactly at 128
+    target = 0.81
+    ctrl_steps = np.array([0, 64, 128, 256])
+    rows = []
+    for n, accs in {0: [0.0, target - 0.4, target + 1.2, 0.9],
+                    4: [0.0, 0.0, target, 0.9]}.items():
+        rid = f"{CMNIST_BASE}_seed0_N{n}ep"
+        for s, a in zip(ctrl_steps, accs):
+            if n == 0 and s == 256:
+                a = 0.9
+            rows.append(_row(rid, "cmnist_phase2", "phase2", n * STEPS_PER_EPOCH + s, s,
+                             "color_random", min(a, 0.9)))
+    df = pd.DataFrame(rows, columns=COLUMNS)
+    t = plasticity_table(df).set_index("branch_n")
+    # control: a0 = 0.41, a1 = 0.9 (clipped) -> frac (0.81-0.41)/(0.49)
+    frac = (target - (target - 0.4)) / (0.9 - (target - 0.4))
+    expected = 64 * 2 ** frac
+    assert t.loc[0, "steps_to_target"] == pytest.approx(expected)
+    assert t.loc[4, "ratio"] == pytest.approx(128 / expected)

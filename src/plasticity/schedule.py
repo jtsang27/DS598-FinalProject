@@ -26,9 +26,25 @@ def _every_epochs(n: int, steps_per_epoch: int, total: int) -> set[int]:
     return set(range(n * steps_per_epoch, total + 1, n * steps_per_epoch))
 
 
-def check_steps(steps_per_epoch: int, total: int) -> list[int]:
+def check_steps(steps_per_epoch: int, total: int, dense_until: int | None = None,
+                dense_every: int | None = None) -> list[int]:
+    """Step 0, powers of two, every half epoch and the end; optionally also every
+    ``dense_every`` steps up to ``dense_until`` (inclusive)."""
     steps = {0, total} | set(log_steps(total)) | _half_epochs(steps_per_epoch, total)
+    if dense_until is not None and dense_every is not None:
+        steps |= set(range(dense_every, dense_until + 1, dense_every))
     return sorted(s for s in steps if 0 <= s <= total)
+
+
+PHASE2_DENSE_EVERY = 16
+PHASE2_DENSE_EPOCHS = 2
+
+
+def phase2_check_steps(steps_per_epoch: int, total: int) -> list[int]:
+    """Phase-2 checks: the usual schedule plus every 16 steps for the first 2 epochs, so
+    steps-to-target (and the plasticity ratio) is not quantized by power-of-two spacing."""
+    return check_steps(steps_per_epoch, total, dense_until=PHASE2_DENSE_EPOCHS * steps_per_epoch,
+                       dense_every=PHASE2_DENSE_EVERY)
 
 
 def save_steps(experiment: str, schedule: str, steps_per_epoch: int, total: int,

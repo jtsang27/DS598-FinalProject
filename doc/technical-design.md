@@ -197,7 +197,9 @@ Command-line flags override config values (for the later sweep).
 ### 5.6 When to test and save
 
 - **Checks** (evaluate every test set + write metrics): step 0, then steps 1, 2, 4, 8, …
-  within each phase, plus every half epoch, plus the last step.
+  within each phase, plus every half epoch, plus the last step. Phase 2 also checks every
+  16 steps for its first 2 epochs, so steps-to-target is not quantized by the
+  power-of-two spacing.
 - Checks are cheap (metrics only), so they always follow the full schedule. Weight
   files are 45 MB each for ResNet18, so saving them follows a thinner schedule:
 
@@ -255,7 +257,8 @@ acc_color_label, lr, train_loss_avg, weight_norm, dist_from_init, wall_time_s`
   shape learning.
 - **Summary table** (CSV + printed): for each N, the Phase-2 steps to reach 90% of the
   control's final `color_random` accuracy, divided by the control's steps (the plasticity
-  ratio for this experiment).
+  ratio for this experiment). Steps-to-target is interpolated linearly in log(step)
+  between the last check below the target and the first at or above it.
 - With several seeds, curves show the mean with a band of ± 1 standard deviation.
 
 ### 5.10 Verification
