@@ -157,3 +157,96 @@ def test_cli_no_metrics_exits_nonzero(tmp_path, capsys):
         main(["--root", str(tmp_path), "--experiment", "cmnist"])
     assert e.value.code not in (0, None)
     assert "metrics" in capsys.readouterr().err
+
+
+# --- figure content -------------------------------------------------------
+from plasticity.plot import _draw_cifar, _draw_cmnist_branch, _draw_cmnist_overlay  # noqa: E402
+
+
+def _labels(ax):
+    return [ln.get_label() for ln in ax.lines]
+
+
+def test_cifar_lines_chance_and_band():
+    fig = _draw_cifar(synthetic_cifar(seeds=(0, 1)))
+    acc, loss = fig.axes
+    assert sorted(_labels(acc)) == ["chance", "gaussian", "independent", "real"]
+    chance = next(ln for ln in acc.lines if ln.get_label() == "chance")
+    assert list(chance.get_ydata()) == [CHANCE_Y, CHANCE_Y]
+    real = next(ln for ln in acc.lines if ln.get_label() == "real")
+    assert real.get_color() == "black"
+    assert min(real.get_xdata()) == 0.5 and acc.get_xscale() == "log"
+    assert len(acc.collections) == 3 and len(loss.collections) == 3
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_cifar_band_is_mean_pm_std():
+    df = synthetic_cifar(seeds=(0, 1))
+    fig = _draw_cifar(df)
+    acc = fig.axes[0]
+    real = next(ln for ln in acc.lines if ln.get_label() == "real")
+    band = next(c for c in acc.collections
+                if np.allclose(c.get_paths()[0].vertices[:, 0].min(), 0.5))
+    assert band.get_paths()[0].vertices[:, 0].max() == 1024
+    vals = df[(df.test_set == "real") & (df.global_step == 1024)].acc
+    mean, std = vals.mean(), vals.std(ddof=1)
+    assert real.get_ydata()[-1] == pytest.approx(mean)
+    tail = band.get_paths()[0].vertices
+    tail = tail[tail[:, 0] == 1024][:, 1]
+    assert sorted(tail)[0] == pytest.approx(mean - std)
+    assert sorted(tail)[-1] == pytest.approx(mean + std)
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_cifar_single_seed_has_no_band():
+    fig = _draw_cifar(synthetic_cifar(seeds=(0,)))
+    assert all(len(ax.collections) == 0 for ax in fig.axes)
+    assert len([ln for ln in fig.axes[0].lines if ln.get_label() != "chance"]) == 3
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("seeds,bands", [((0,), 0), ((0, 1), 5)])
+def test_branch_switch_line_and_bands(seeds, bands):
+    import matplotlib.pyplot as plt
+    df = synthetic_cmnist(100, {4: 200, 16: None}, seeds=seeds)
+    fig = _draw_cmnist_branch(df, 4)
+    acc, loss = fig.axes
+    for ax in (acc, loss):
+        sw = [ln for ln in ax.lines if ln.get_label() == "switch"]
+        assert len(sw) == 1 and list(sw[0].get_xdata()) == [4 * STEPS_PER_EPOCH] * 2
+    assert len(acc.collections) == bands  # 4 test sets + color-label line
+    for ts in CMNIST_TS:
+        ln = next(ln for ln in acc.lines if ln.get_label() == ts)
+        x = np.asarray(ln.get_xdata())
+        assert x.min() == 0.5 and x.max() > 4 * STEPS_PER_EPOCH
+        assert np.sum(x == 4 * STEPS_PER_EPOCH) == 1  # switch step not double-counted
+    plt.close(fig)
+
+
+def test_branch_switch_step_is_not_double_counted_single_seed():
+    import matplotlib.pyplot as plt
+    df = synthetic_cmnist(100, {4: 200}, seeds=(0,))
+    fig = _draw_cmnist_branch(df, 4)
+    assert len(fig.axes[0].collections) == 0
+    plt.close(fig)
+
+
+def test_overlay_content():
+    import matplotlib.pyplot as plt
+    df = synthetic_cmnist(100, {4: 200, 16: None}, seeds=(0, 1))
+    fig = _draw_cmnist_overlay(df)
+    ax = fig.axes[0]
+    assert sorted(_labels(ax)) == ["N=0 (control)", "N=16", "N=4"]
+    assert next(ln for ln in ax.lines if ln.get_label() == "N=0 (control)").get_color() == "black"
+    assert len(ax.collections) == 3
+    plt.close(fig)
+    fig = _draw_cmnist_overlay(synthetic_cmnist(seeds=(0,)))
+    assert len(fig.axes[0].collections) == 0
+    plt.close(fig)
+
+
+CHANCE_Y = 0.1
+CMNIST_TS = ("color_matched", "color_random", "color_conflict", "gaussian")

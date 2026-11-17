@@ -95,6 +95,10 @@ def _colors(names):
 
 
 def plot_cifar(df: pd.DataFrame, out: Path) -> Path:
+    return _save(_draw_cifar(df), out)
+
+
+def _draw_cifar(df: pd.DataFrame):
     """Accuracy and loss vs global step (log2 axis), one line per test set."""
     df = df if "setting" in df else _annotate(df)
     settings = sorted(df["setting"].unique())
@@ -117,7 +121,7 @@ def plot_cifar(df: pd.DataFrame, out: Path) -> Path:
         ax.set_ylabel("accuracy" if col == "acc" else "loss")
         ax.grid(alpha=0.3)
     axes[0].legend(fontsize=8)
-    return _save(fig, out)
+    return fig
 
 
 def _switch(p2: pd.DataFrame) -> float:
@@ -125,6 +129,10 @@ def _switch(p2: pd.DataFrame) -> float:
 
 
 def plot_cmnist_branch(df: pd.DataFrame, n: int, out: Path) -> Path:
+    return _save(_draw_cmnist_branch(df, n), out)
+
+
+def _draw_cmnist_branch(df: pd.DataFrame, n: int):
     """Phase 1 (up to the switch) then Phase 2 of branch ``n`` on the four test sets."""
     df = df if "setting" in df else _annotate(df)
     p2_all = df[(df["phase"] == "phase2") & (df["branch_n"] == n)]
@@ -138,10 +146,9 @@ def plot_cmnist_branch(df: pd.DataFrame, n: int, out: Path) -> Path:
         ls = LINESTYLES[si % len(LINESTYLES)]
         p2 = p2_all[p2_all["setting"] == setting]
         p1 = df[(df["phase"] == "phase1") & (df["setting"] == setting)
-                & (df["global_step"] <= _switch(p2))]
+                & (df["global_step"] < _switch(p2))]
         for ts in CMNIST_SETS:
             seg = pd.concat([p1[p1["test_set"] == ts], p2[p2["test_set"] == ts]])
-            seg = seg.drop_duplicates(["run_id", "global_step"])
             if seg.empty:
                 continue
             label = ts if len(settings) == 1 else f"{ts} ({setting})"
@@ -161,10 +168,14 @@ def plot_cmnist_branch(df: pd.DataFrame, n: int, out: Path) -> Path:
         ax.grid(alpha=0.3)
     axes[0].set_title(f"branch N = {n}")
     axes[0].legend(fontsize=8)
-    return _save(fig, out)
+    return fig
 
 
 def plot_cmnist_overlay(df: pd.DataFrame, out: Path) -> Path:
+    return _save(_draw_cmnist_overlay(df), out)
+
+
+def _draw_cmnist_overlay(df: pd.DataFrame):
     """``color_random`` accuracy vs Phase-2 step for every N (control N = 0 in black)."""
     df = df if "setting" in df else _annotate(df)
     p2 = df[(df["phase"] == "phase2") & (df["test_set"] == "color_random")]
@@ -187,7 +198,7 @@ def plot_cmnist_overlay(df: pd.DataFrame, out: Path) -> Path:
     ax.set_ylabel("color_random accuracy (shape learning)")
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8)
-    return _save(fig, out)
+    return fig
 
 
 def _first_reach(steps: np.ndarray, acc: np.ndarray, target: float) -> float:
