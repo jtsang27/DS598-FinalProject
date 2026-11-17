@@ -1,0 +1,53 @@
+#!/bin/bash -l
+#$ -P ds598ns
+#$ -l gpus=2
+#$ -l gpu_c=7.0
+#$ -l h_rt=00:30:00
+#$ -l mem_free=32G
+#$ -pe smp 8
+#$ -j y
+#$ -o logs/sge/
+#$ -N smoke
+# Smoke test: pytest, then short runs of every experiment on node-local scratch.
+# Submit: mkdir -p logs/sge && qsub jobs/smoke.qsub
+
+cd /projectnb/ds598ns/projects/Team2project
+module load python3/3.12.4
+source env/bin/activate
+set -euo pipefail
+umask 022
+nvidia-smi -L
+
+ROOT=/scratch/$USER/smoke
+rm -rf "$ROOT"; mkdir -p "$ROOT"
+
+python -m pytest -q
+
+# GPU 0: CIFAR-10 fresh run, 200 steps.
+CUDA_VISIBLE_DEVICES=0 python -m plasticity.train --config configs/cifar_fresh.json \
+    --root "$ROOT" --seed 0 --total-steps 200 --eval-size 1000 --num-workers 3 &
+pid0=$!
+
+# GPU 1: Colored-MNIST Phase 1 (1 epoch), then Phase 2 branching at N = 0 and N = 1.
+(
+  export CUDA_VISIBLE_DEVICES=1
+  python -m plasticity.train --config configs/cmnist_phase1.json --root "$ROOT" --seed 0 \
+      --phase1-epochs 1 --durations 0 1 --eval-size 1000 --num-workers 3
+  for n in 0 1; do
+    python -m plasticity.train --config configs/cmnist_phase2.json --root "$ROOT" --seed 0 \
+        --branch-n $n --phase1-epochs 1 --phase2-epochs 1 --durations 0 1 \
+        --eval-size 1000 --num-workers 3
+  done
+) &
+pid1=$!
+
+status=0
+wait "$pid0" || status=$?
+wait "$pid1" || status=$?
+if [ "$status" -ne 0 ]; then echo "a run failed (exit $status)"; exit "$status"; fi
+
+python -m plasticity.plot --root "$ROOT" --experiment cifar_fresh
+python -m plasticity.plot --root "$ROOT" --experiment cmnist
+echo "== figures"; ls -R "$ROOT/figures"
+for f in "$ROOT"/logs/*/*/metrics.csv; do echo "== $f"; tail -n 3 "$f"; done
+echo "SMOKE OK"

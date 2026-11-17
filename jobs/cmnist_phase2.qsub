@@ -1,0 +1,37 @@
+#!/bin/bash -l
+#$ -P ds598ns
+#$ -l gpus=2
+#$ -l gpu_c=7.0
+#$ -l h_rt=02:00:00
+#$ -l mem_free=32G
+#$ -pe smp 8
+#$ -j y
+#$ -o logs/sge/
+#$ -N cmnist_p2
+#$ -t 1-3
+# Colored-MNIST Phase 2 array job: task i runs two branches side by side.
+# Submit: qsub -hold_jid cmnist_p1 jobs/cmnist_phase2.qsub   (SEED via qsub -v SEED=0)
+
+cd /projectnb/ds598ns/projects/Team2project
+module load python3/3.12.4
+source env/bin/activate
+set -euo pipefail
+umask 022
+nvidia-smi -L
+
+SEED=${SEED:-0}
+PAIRS=("0 1" "2 4" "8 16")
+read -r -a NS <<< "${PAIRS[$((SGE_TASK_ID - 1))]}"
+pids=()
+i=0
+for n in "${NS[@]}"; do
+  CUDA_VISIBLE_DEVICES=$i python -m plasticity.train --config configs/cmnist_phase2.json \
+      --seed "$SEED" --branch-n "$n" --num-workers 3 &
+  pids+=($!)
+  i=$((i + 1))
+done
+status=0
+for p in "${pids[@]}"; do wait "$p" || status=$?; done
+if [ "$status" -ne 0 ]; then echo "a run failed (exit $status)"; exit "$status"; fi
+# Plots read every Phase-2 log; the last array task to finish has them all (earlier ones plot partial data).
+python -m plasticity.plot --root . --experiment cmnist || true

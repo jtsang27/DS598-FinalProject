@@ -32,3 +32,6 @@ logs/sge/
 
 # Local agent scratch
 .superpowers/
+
+# Packaging metadata
+*.egg-info/
