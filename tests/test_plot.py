@@ -139,8 +139,8 @@ def test_cli_writes_all_figures(tmp_path, capsys):
     _write_logs(tmp_path, "cmnist", synthetic_cmnist(100, {4: 200, 16: None}, seeds=(0, 1)))
     main(["--root", str(tmp_path), "--experiment", "cmnist"])
     fig = tmp_path / "figures" / "cmnist"
-    for name in ("overlay.png", "branch_N0.png", "branch_N4.png", "branch_N16.png",
-                 "plasticity_table.csv"):
+    for name in ("overlay.png", "switch.png", "branch_N0.png", "branch_N4.png",
+                 "branch_N16.png", "plasticity_table.csv"):
         assert (fig / name).stat().st_size > 0
     assert "ratio" in capsys.readouterr().out
     assert "ratio" in pd.read_csv(fig / "plasticity_table.csv").columns
@@ -176,8 +176,48 @@ def test_cifar_lines_chance_and_band():
     real = next(ln for ln in acc.lines if ln.get_label() == "real")
     assert real.get_color() == "black"
     assert min(real.get_xdata()) == 0.5 and acc.get_xscale() == "log"
-    assert len(acc.collections) == 3 and len(loss.collections) == 3
+    assert len(acc.collections) == 3 and len(loss.collections) == 0  # no band on loss
     import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_loss_panels_skip_startup_and_use_log_scale():
+    from plasticity.plot import STARTUP_STEPS
+    import matplotlib.pyplot as plt
+    for fig in (_draw_cifar(synthetic_cifar(seeds=(0, 1))),
+                _draw_cmnist_branch(synthetic_cmnist(100, {4: 200}, seeds=(0, 1)), 4)):
+        loss = fig.axes[1]
+        assert loss.get_yscale() == "log"
+        assert len(loss.collections) == 0
+        for ln in loss.lines:
+            if ln.get_label() == "switch":
+                continue
+            assert min(ln.get_xdata()) >= STARTUP_STEPS, ln.get_label()
+        plt.close(fig)
+
+
+def test_branch_loss_keeps_phase2_of_control_from_step_0():
+    # N = 0 starts Phase 2 at global step 0; its early steps are after the switch, keep them
+    import matplotlib.pyplot as plt
+    fig = _draw_cmnist_branch(synthetic_cmnist(100, {4: 200}, seeds=(0,)), 0)
+    rnd = next(ln for ln in fig.axes[1].lines if ln.get_label() == "color_random")
+    assert min(rnd.get_xdata()) == 0.5  # step 0, drawn at 0.5 on the log2 axis
+    plt.close(fig)
+
+
+def test_switch_figure_content():
+    from plasticity.plot import SWITCH_WINDOW, _draw_cmnist_switch
+    import matplotlib.pyplot as plt
+    fig = _draw_cmnist_switch(synthetic_cmnist(100, {4: 200, 16: None}, seeds=(0, 1)))
+    loss, acc = fig.axes
+    for ax in (loss, acc):
+        runs = [ln for ln in ax.lines if ln.get_label() != "chance"]
+        assert sorted(ln.get_label() for ln in runs) == ["N=0 (control)", "N=16", "N=4"]
+        assert next(ln for ln in runs if ln.get_label() == "N=0 (control)").get_color() == "black"
+        assert max(max(ln.get_xdata()) for ln in runs) <= SWITCH_WINDOW
+    assert "chance" in _labels(acc)
+    assert loss.get_yscale() == "log" and len(loss.collections) == 0
+    assert len(acc.collections) == 3  # seed band on accuracy only
     plt.close(fig)
 
 

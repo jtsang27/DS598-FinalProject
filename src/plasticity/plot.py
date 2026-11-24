@@ -17,6 +17,12 @@ CIFAR_SETS = ("real", "gaussian", "independent")
 CMNIST_SETS = ("color_matched", "color_random", "color_conflict", "gaussian")
 CHANCE = 0.1
 LINESTYLES = ("-", "--", ":", "-.")
+# Loss before this step is a start-up instability (lr 0.05 from step 0, no warmup), not part of
+# the analysis; loss panels leave it out. Phase-2 rows are always kept (they follow the switch).
+STARTUP_STEPS = 64
+# Steps after the switch shown in the switch figure.
+SWITCH_WINDOW = 512
+STARTUP_NOTE = f"steps < {STARTUP_STEPS} not shown (start-up instability)"
 _BRANCH_RE = re.compile(r"_N(\d+)ep$")
 _SEED_RE = re.compile(r"_seed\d+")
 
@@ -71,12 +77,23 @@ def _mean_std(df: pd.DataFrame, by: str, col: str):
     return mean.index.to_numpy(), mean.to_numpy(), std.to_numpy(), int(n.max()) if len(n) else 0
 
 
-def _line(ax, df, xcol, ycol, label, color, ls="-", lw=1.5):
+def _line(ax, df, xcol, ycol, label, color, ls="-", lw=1.5, band=True, log_x=True):
     xs, mean, std, n = _mean_std(df, xcol, ycol)
-    x = _x(xs)
+    x = _x(xs) if log_x else xs
     ax.plot(x, mean, color=color, ls=ls, lw=lw, label=label)
-    if n > 1:
+    if band and n > 1:
         ax.fill_between(x, mean - std, mean + std, color=color, alpha=0.2, lw=0)
+
+
+def _drop_startup(df: pd.DataFrame) -> pd.DataFrame:
+    """Rows for loss panels: everything except pre-switch steps < STARTUP_STEPS."""
+    return df[(df["phase"] == "phase2") | (df["global_step"] >= STARTUP_STEPS)]
+
+
+def _style_loss(ax) -> None:
+    ax.set_yscale("log")
+    ax.text(0.01, 0.98, STARTUP_NOTE, transform=ax.transAxes, ha="left", va="top",
+            fontsize=7, color="gray")
 
 
 def _save(fig, out: Path) -> Path:
@@ -106,16 +123,19 @@ def _draw_cifar(df: pd.DataFrame):
     colors["real"] = "black"
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     for ax, col in zip(axes, ("acc", "loss")):
+        data = df if col == "acc" else _drop_startup(df)
         for si, setting in enumerate(settings):
             ls = LINESTYLES[si % len(LINESTYLES)]
             for ts in CIFAR_SETS:
-                sub = df[(df["setting"] == setting) & (df["test_set"] == ts)]
+                sub = data[(data["setting"] == setting) & (data["test_set"] == ts)]
                 if sub.empty:
                     continue
                 label = ts if len(settings) == 1 else f"{ts} ({setting})"
-                _line(ax, sub, "global_step", col, label, colors[ts], ls)
+                _line(ax, sub, "global_step", col, label, colors[ts], ls, band=col == "acc")
         if col == "acc":
             ax.axhline(CHANCE, color="gray", ls="--", lw=1, label="chance")
+        else:
+            _style_loss(ax)
         _style_log2(ax, df["global_step"].max())
         ax.set_xlabel("global step (log2; 0 drawn at 0.5)")
         ax.set_ylabel("accuracy" if col == "acc" else "loss")
@@ -153,7 +173,9 @@ def _draw_cmnist_branch(df: pd.DataFrame, n: int):
                 continue
             label = ts if len(settings) == 1 else f"{ts} ({setting})"
             _line(axes[0], seg, "global_step", "acc", label, colors[ts], ls)
-            _line(axes[1], seg, "global_step", "loss", label, colors[ts], ls)
+            loss_seg = _drop_startup(seg)
+            if not loss_seg.empty:
+                _line(axes[1], loss_seg, "global_step", "loss", label, colors[ts], ls, band=False)
         cl = pd.concat([p1, p2])
         cl = cl[cl["test_set"] == "color_conflict"].dropna(subset=["acc_color_label"])
         if not cl.empty:
@@ -166,6 +188,7 @@ def _draw_cmnist_branch(df: pd.DataFrame, n: int):
         ax.set_xlabel("global step (log2; 0 drawn at 0.5)")
         ax.set_ylabel(name)
         ax.grid(alpha=0.3)
+    _style_loss(axes[1])
     axes[0].set_title(f"branch N = {n}")
     axes[0].legend(fontsize=8)
     return fig
@@ -198,6 +221,46 @@ def _draw_cmnist_overlay(df: pd.DataFrame):
     ax.set_ylabel("color_random accuracy (shape learning)")
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8)
+    return fig
+
+
+def plot_cmnist_switch(df: pd.DataFrame, out: Path) -> Path:
+    return _save(_draw_cmnist_switch(df), out)
+
+
+def _draw_cmnist_switch(df: pd.DataFrame):
+    """The switch, close up: training loss and color_random accuracy for the first
+    SWITCH_WINDOW Phase-2 steps, one line per N (seed mean; control N = 0 in black)."""
+    df = df if "setting" in df else _annotate(df)
+    p2 = df[(df["phase"] == "phase2") & (df["test_set"] == "color_random")
+            & (df["phase_step"] <= SWITCH_WINDOW)]
+    ns = sorted(int(n) for n in p2["branch_n"].dropna().unique())
+    settings = sorted(p2["setting"].unique())
+    colors = _colors([n for n in ns if n != 0])
+    colors[0] = "black"
+    fig, (loss_ax, acc_ax) = plt.subplots(1, 2, figsize=(13, 4.5), sharex=True)
+    for si, setting in enumerate(settings):
+        ls = LINESTYLES[si % len(LINESTYLES)]
+        for n in ns:
+            sub = p2[(p2["setting"] == setting) & (p2["branch_n"] == n)]
+            if sub.empty:
+                continue
+            name = "N=0 (control)" if n == 0 else f"N={n}"
+            label = name if len(settings) == 1 else f"{name} ({setting})"
+            _line(loss_ax, sub.dropna(subset=["train_loss_avg"]), "phase_step", "train_loss_avg",
+                  label, colors[n], ls, band=False, log_x=False)
+            _line(acc_ax, sub, "phase_step", "acc", label, colors[n], ls, log_x=False)
+    loss_ax.set_yscale("log")
+    loss_ax.set_ylabel("training loss (mean since previous check)")
+    loss_ax.set_title("Loss at the switch: confidently wrong, then recovery")
+    acc_ax.axhline(CHANCE, color="gray", ls="--", lw=1, label="chance")
+    acc_ax.set_ylabel("color_random accuracy (shape learning)")
+    acc_ax.set_title("Shape accuracy after the switch")
+    for ax in (loss_ax, acc_ax):
+        ax.set_xlim(0, SWITCH_WINDOW)
+        ax.set_xlabel("Phase-2 step (0 = switch to random colors)")
+        ax.grid(alpha=0.3)
+    acc_ax.legend(fontsize=8)
     return fig
 
 
@@ -264,6 +327,7 @@ def main(argv=None) -> None:
     for n in sorted(int(n) for n in df["branch_n"].dropna().unique()):
         print(plot_cmnist_branch(df, n, fig_dir / f"branch_N{n}.png"))
     print(plot_cmnist_overlay(df, fig_dir / "overlay.png"))
+    print(plot_cmnist_switch(df, fig_dir / "switch.png"))
     table = plasticity_table(df)
     fig_dir.mkdir(parents=True, exist_ok=True)
     table.to_csv(fig_dir / "plasticity_table.csv", index=False)
