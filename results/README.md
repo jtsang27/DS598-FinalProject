@@ -9,10 +9,10 @@ All runs: ResNet18, SGD lr 0.05 (constant), weight decay 5e-4, batch size 128, �
 - Seed 0, 65,536 steps, about 30 min.
 - **Up to about step 128:** real, Gaussian-clone and independent-pixel accuracy rise together. Only low-order statistics are being used.
 - **From step 256:** real keeps rising to 87–90%. Independent-pixel accuracy drops back to chance. The Gaussian clone peaks at about 57%, then settles around 30–36%.
-- There is a brief loss spike around step 32, from starting at lr 0.05 with no warmup. It recovers by step 64.
+- A brief start-up instability (steps 16–64, from starting at lr 0.05 with no warmup) is left out of the loss panels. It isn't part of the analysis; a short warmup will remove it next round.
 - Figures:
   - `curves_annotated.png`: smoothed, with notes.
-  - `curves.png`: raw accuracy and loss.
+  - `curves.png`: raw accuracy, and loss on a log scale from step 64.
 
 ## Run 2: Colored MNIST, color phase → random colors (`cmnist/`)
 
@@ -37,8 +37,9 @@ Plasticity ratio = Phase-2 steps to reach 90% of the control's final random-colo
 | 16 | 176 | **3.81** |
 
 - Figures:
-  - `overlay.png`: shape learning in Phase 2 for every N.
-  - `branch_N{n}.png`: both phases for one branch, with the switch marked.
+  - **`switch.png`: the loss figure to present.** Training loss (log scale) and shape accuracy for the first 512 steps after the switch, one line per N. The loss starts at about 10–15: the network is still answering by color, so it is confidently wrong. Longer color phases (N = 16 most) recover more slowly.
+  - `overlay.png`: shape learning in Phase 2 for every N, over the whole phase.
+  - `branch_N{n}.png`: both phases for one branch, with the switch marked. The loss panel is on a log scale and leaves out the start-up steps < 64.
   - `plasticity_table.csv`: the table above.
 - **Caveats:**
   - Only 2 seeds so far.
